@@ -574,36 +574,37 @@ state_define('playing', function()
     return 'block_' .. game.block_counter
   end
 
+  s.can_scroll_to = function(index)
+    if s.faller and s.faller.pos_y > s.stack_y(index) then
+      sfx(7)
+      return false
+    end
+
+    return true
+  end
+
   s.check_input = function()
-    if (btnp(0)) then
-      if s.faller.pos_y > s.stack_y(6) then
-        sfx(7)
-      else
-        sfx(0)
-        s.board = table_rotate(s.board, 1)
-      end
+    if btnp(0) and s.can_scroll_to(6) then
+      sfx(0)
+      s.board = table_rotate(s.board, 1)
     end
 
-    if (btnp(1)) then
-      if s.faller.pos_y > s.stack_y(4) then
-        sfx(7)
-      else
-        sfx(1)
-        s.board = table_rotate(s.board, -1)
-      end
+    if btnp(1) and s.can_scroll_to(4) then
+      sfx(1)
+      s.board = table_rotate(s.board, -1)
     end
 
-    if (btnp(2)) then
+    if btnp(2) then
       sfx(3)
       s.rotate_columns(1)
     end
 
-    if (btnp(3)) then
+    if btnp(3) then
       sfx(2)
       s.rotate_columns(-1)
     end
 
-    if (btnp(4)) then
+    if btnp(4) then
       sfx(4)
       s.tick.interval = 0
     end
@@ -744,11 +745,19 @@ state_define('playing', function()
       local block_object = o('faller_' .. i)
       local key = s.block_key()
       object_define(key, { tiles = block_object.tiles })
-      add(new_stack, key)
+      add(new_stack, {
+        key = key,
+        match_checked = false,
+        remove = false
+      })
     end
 
     foreach(s.board[5], function(transfer_block)
-      add(new_stack, transfer_block)
+      add(new_stack, {
+        key = transfer_block.key,
+        match_checked = false,
+        remove = false
+      })
     end)
 
     if #new_stack > s.stack_fail_length then
@@ -766,7 +775,9 @@ state_define('playing', function()
       local blocks_count = #s.board[x]
 
       for y = 1, blocks_count do
-        local key = s.board[x][y]
+        local block = s.board[x][y]
+        local key = block['key']
+        printh(key)
         local pos_x, pos_y = s.get_block_pos(x, y)
         o(key).pos({ x = pos_x, y = pos_y })
       end
