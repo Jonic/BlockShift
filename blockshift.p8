@@ -26,8 +26,9 @@ local game_init = function()
 
   g.draw = function()
     cls()
-    g.state.draw()
+
     g.objects_exec('draw')
+    g.state.draw()
   end
 
   g.go_to = function(name)
@@ -111,7 +112,7 @@ local game_init = function()
 
     for _, name in pairs(g.objects_order) do
       obj = g.objects[name]
-      if (obj ~= nil) obj[fn]()
+      if (obj[fn] ~= nil) obj[fn]()
     end
   end
 
@@ -412,7 +413,7 @@ function object_define(name, props)
 
     local t = o.frame_count -- elapsed time
     local b = pos1          -- begin
-    local c = pos2 - pos1   -- change == ending - beginning
+    local c = pos2 - pos1   -- change == end - beginning
     local d = o.duration    -- duration (total time)
     local e = o.easing or linear
 
@@ -507,19 +508,31 @@ local tiles = {}
 state_define('playing', function()
   local s = {}
 
-  s.block_size = 8
-  s.board      = {}
-  s.board_x    = 8
-  s.board_y    = 8
-  s.destroying = false
-  s.faller     = nil
-  s.next       = nil
-  s.grid_x     = 8
-  s.grid_y     = 14
+  s.block_size      = 8
+  s.board           = {}
+  s.board_x         = 8
+  s.board_y         = 8
+  s.destroying      = false
+  s.faller          = nil
+  s.faller_defaults = {
+    height      = 3,
+    max_y       = 88,
+    pos_x       = 40,
+    pos_y       = -28,
+    y_increment = 4
+  }
+  s.grid_x            = 8
+  s.grid_y            = 14
+  s.next              = nil
+  s.stack_index       = 5
+  s.stack_fail_length = 14
+  s.tick              = {
+    counter  = 30,
+    interval = 30,
+    interval_default = 30
+  }
 
   s.init = function()
-    printh('playing.init()')
-
     for x = 1, s.grid_x do
       add(s.board, {})
     end
@@ -530,7 +543,13 @@ state_define('playing', function()
   s.update = function()
     if (s.destroying) return
 
-    s.check_faller()
+    if s.faller == nil then
+      return s.spawn_faller()
+    end
+
+    if s.should_tick() then
+      s.update_faller()
+    end
 
     if s.check_matches() then
       s.destroying = true
@@ -542,21 +561,13 @@ state_define('playing', function()
   end
 
   s.draw = function()
+    map(0, 0)
+    rect(7, 7, 72, 120, 0)
     s.draw_board()
     s.draw_next()
   end
 
   -- state methods
-
-  s.add_block = function(x, y)
-    local key = s.block_key()
-    local tiles = {
-      { i = s.rnd_block() }
-    }
-
-    object_define(key, { tiles = tiles })
-    add(s.board[x], key)
-  end
 
   s.block_key = function()
     game.increment_block_counter()
@@ -565,13 +576,21 @@ state_define('playing', function()
 
   s.check_input = function()
     if (btnp(0)) then
-      sfx(0)
-      s.board = table_rotate(s.board, 1)
+      if s.faller.pos_y > s.stack_y(6) then
+        sfx(7)
+      else
+        sfx(0)
+        s.board = table_rotate(s.board, 1)
+      end
     end
 
     if (btnp(1)) then
-      sfx(1)
-      s.board = table_rotate(s.board, -1)
+      if s.faller.pos_y > s.stack_y(4) then
+        sfx(7)
+      else
+        sfx(1)
+        s.board = table_rotate(s.board, -1)
+      end
     end
 
     if (btnp(2)) then
@@ -583,11 +602,10 @@ state_define('playing', function()
       sfx(2)
       s.rotate_columns(-1)
     end
-  end
 
-  s.check_faller = function()
-    if s.faller then
-      s.spawn_faller()
+    if (btnp(4)) then
+      sfx(4)
+      s.tick.interval = 0
     end
   end
 
@@ -596,7 +614,6 @@ state_define('playing', function()
   end
 
   s.draw_board = function()
-    map(0, 0)
     -- corners
     spr(2, 5,  5)
     spr(3, 67, 5)
@@ -614,30 +631,43 @@ state_define('playing', function()
     -- right line
     line(73, 13, 73, 114, 7)
     line(74, 13, 74, 114, 6)
-    rectfill(7, 7, 72, 120, 0)
   end
 
   s.draw_next = function()
-    rectfill(79, 7, 120, 34, 0)
+    rect(79, 7, 120, 39, 0)
     -- corners
     spr(2, 77, 5)
     spr(3, 115, 5)
-    spr(4, 77,  29)
-    spr(5, 115, 29)
+    spr(4, 77,  34)
+    spr(5, 115, 34)
     -- top line
     line(85, 5, 114, 5, 7)
     line(85, 6, 114, 6, 6)
     -- bottom line
-    line(85, 35, 114, 35, 7)
-    line(85, 36, 114, 36, 6)
+    line(85, 40, 114, 40, 7)
+    line(85, 41, 114, 41, 6)
     -- left line
-    line(77, 13, 77, 28, 7)
-    line(78, 13, 78, 28, 6)
+    line(77, 13, 77, 33, 7)
+    line(78, 13, 78, 33, 6)
     -- right line
-    line(121, 13, 121, 28, 7)
-    line(122, 13, 122, 28, 6)
+    line(121, 13, 121, 33, 7)
+    line(122, 13, 122, 33, 6)
 
     print('next:', 86, 18, 7)
+  end
+
+  s.faller_can_fall = function()
+    local next_pos_y = s.faller.pos_y + s.faller.y_increment
+
+    if next_pos_y > s.faller.max_y then
+      return false
+    end
+
+    if next_pos_y > s.stack_y(s.stack_index) then
+      return false
+    end
+
+    return true
   end
 
   s.get_block_pos = function(x, y)
@@ -661,12 +691,30 @@ state_define('playing', function()
     end
   end
 
-  s.spawn_faller = function()
+  s.should_tick = function()
+    if s.tick.counter >= s.tick.interval then
+      s.tick.counter = 0
+      return true
+    end
 
+    s.tick.counter += 1
+    return false
+  end
+
+  s.spawn_faller = function()
+    s.faller = clone(s.faller_defaults)
+
+    for i = 1, 3 do
+      local block_object = o(s.next[i])
+      local key = 'faller_' .. i
+      object_define(key, { tiles = block_object.tiles })
+    end
+
+    s.spawn_next()
   end
 
   s.spawn_next = function()
-    local pos_y_start = 1
+    local pos_y_start = 3
 
     s.next = {}
 
@@ -684,6 +732,35 @@ state_define('playing', function()
     end
   end
 
+  s.stack_y = function(i)
+    local blocks_count = #s.board[i]
+    local vert_offset = (s.grid_y - blocks_count) * s.block_size
+    return vert_offset - (s.faller.height * s.block_size)
+  end
+
+  s.transfer_faller_to_board = function()
+    new_stack = {}
+    for i = 1, 3 do
+      local block_object = o('faller_' .. i)
+      local key = s.block_key()
+      object_define(key, { tiles = block_object.tiles })
+      add(new_stack, key)
+    end
+
+    foreach(s.board[5], function(transfer_block)
+      add(new_stack, transfer_block)
+    end)
+
+    if #new_stack > s.stack_fail_length then
+      sfx(7)
+      go_to('game_over')
+    end
+
+    s.board[5] = new_stack
+    s.faller = nil
+    s.tick.interval = s.tick.interval_default
+  end
+
   s.update_blocks = function()
     for x = 1, s.grid_x do
       local blocks_count = #s.board[x]
@@ -693,6 +770,23 @@ state_define('playing', function()
         local pos_x, pos_y = s.get_block_pos(x, y)
         o(key).pos({ x = pos_x, y = pos_y })
       end
+    end
+  end
+
+  s.update_faller = function()
+    if s.faller_can_fall() then
+      s.faller.pos_y += s.faller.y_increment
+
+      for i = 1, 3 do
+        local block_object = o('faller_' .. i)
+        block_object.pos({
+          x = s.faller.pos_x,
+          y = s.faller.pos_y + (i * 8)
+        })
+      end
+    else
+      sfx(6)
+      s.transfer_faller_to_board()
     end
   end
 
@@ -731,10 +825,10 @@ __gfx__
 02222220000440009999999933333333000110002200002200000000000000000000000000000000000000000000000000000000000000000000000000000000
 __map__
 0101010101010101010101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0100000000000000000101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0100000000000000000101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0100000000000000000101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-0100000000000000000101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0100000000090000000100000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0100000000000000000100000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0100000000000000000100000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0100000000000000000100000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0100000000000000000101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0100000000000000000101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0100000000000000000101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
@@ -751,3 +845,7 @@ __sfx__
 000100002305003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000100002055000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000100002355000000000000000000000000000000007500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00010000310502e050350502d0002b0002e0001c4000d3000e0000d0000c0000b0000b0000a0000a0003300033000320002f0002d000000000000000000000000000000000000000000000000000000000000000
+001000001a050160501405011050110500f050000000f0500e0500e05000000050500305001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0001000019050170501605014050100500e0500d0500b0500a0500a05000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000100002212021120201201f1201e1201d1201b1201a120191201812018120000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
