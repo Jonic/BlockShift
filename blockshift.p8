@@ -508,37 +508,42 @@ state_define('playing', function()
   local s = {}
 
   s.block_size = 8
+  s.board      = {}
   s.board_x    = 8
   s.board_y    = 8
+  s.destroying = false
+  s.faller     = nil
+  s.next       = nil
   s.grid_x     = 8
   s.grid_y     = 14
 
   s.init = function()
     printh('playing.init()')
 
-    s.board = {}
-
     for x = 1, s.grid_x do
       add(s.board, {})
-      for y = 1, rnd_int(4, 10) do
-        s.add_block(x, y)
-        -- printh('s.board[x][y] = ' .. s.board[x + 1][y + 1])
-      end
     end
+
+    s.spawn_next()
   end
 
   s.update = function()
-    if (btnp(0)) s.board = table_rotate(s.board, 1)
-    if (btnp(1)) s.board = table_rotate(s.board, -1)
-    if (btnp(2)) s.rotate_columns(1)
-    if (btnp(3)) s.rotate_columns(-1)
+    if (s.destroying) return
 
+    s.check_faller()
+
+    if s.check_matches() then
+      s.destroying = true
+      return
+    end
+
+    s.check_input()
     s.update_blocks()
   end
 
   s.draw = function()
     s.draw_board()
-    -- s.draw_blocks()
+    s.draw_next()
   end
 
   -- state methods
@@ -548,17 +553,46 @@ state_define('playing', function()
     local tiles = {
       { i = s.rnd_block() }
     }
-    printh(tiles[1].i)
 
-    local pos_x, pos_y = s.get_block_pos(x, y)
-
-    object_define(key, { tiles = tiles }).pos({ x = pos_x, y = pos_y })
+    object_define(key, { tiles = tiles })
     add(s.board[x], key)
   end
 
   s.block_key = function()
     game.increment_block_counter()
     return 'block_' .. game.block_counter
+  end
+
+  s.check_input = function()
+    if (btnp(0)) then
+      sfx(0)
+      s.board = table_rotate(s.board, 1)
+    end
+
+    if (btnp(1)) then
+      sfx(1)
+      s.board = table_rotate(s.board, -1)
+    end
+
+    if (btnp(2)) then
+      sfx(3)
+      s.rotate_columns(1)
+    end
+
+    if (btnp(3)) then
+      sfx(2)
+      s.rotate_columns(-1)
+    end
+  end
+
+  s.check_faller = function()
+    if s.faller then
+      s.spawn_faller()
+    end
+  end
+
+  s.check_matches = function()
+    return false
   end
 
   s.draw_board = function()
@@ -583,6 +617,29 @@ state_define('playing', function()
     rectfill(7, 7, 72, 120, 0)
   end
 
+  s.draw_next = function()
+    rectfill(79, 7, 120, 34, 0)
+    -- corners
+    spr(2, 77, 5)
+    spr(3, 115, 5)
+    spr(4, 77,  29)
+    spr(5, 115, 29)
+    -- top line
+    line(85, 5, 114, 5, 7)
+    line(85, 6, 114, 6, 6)
+    -- bottom line
+    line(85, 35, 114, 35, 7)
+    line(85, 36, 114, 36, 6)
+    -- left line
+    line(77, 13, 77, 28, 7)
+    line(78, 13, 78, 28, 6)
+    -- right line
+    line(121, 13, 121, 28, 7)
+    line(122, 13, 122, 28, 6)
+
+    print('next:', 86, 18, 7)
+  end
+
   s.get_block_pos = function(x, y)
     local blocks_count = #s.board[x]
     local vert_offset = (s.grid_y - blocks_count) * s.block_size
@@ -604,6 +661,29 @@ state_define('playing', function()
     end
   end
 
+  s.spawn_faller = function()
+
+  end
+
+  s.spawn_next = function()
+    local pos_y_start = 1
+
+    s.next = {}
+
+    for i = 1, 3 do
+      local key = 'next_' .. i
+      local tiles = {
+        { i = s.rnd_block() }
+      }
+
+      local pos_x = 111
+      local pos_y = pos_y_start + (i * 8)
+
+      object_define(key, { tiles = tiles, x = pos_x, y = pos_y })
+      add(s.next, key)
+    end
+  end
+
   s.update_blocks = function()
     for x = 1, s.grid_x do
       local blocks_count = #s.board[x]
@@ -615,22 +695,6 @@ state_define('playing', function()
       end
     end
   end
-
-  -- s.draw_blocks = function()
-  --   for x = 0, s.grid_x - 1 do
-  --     local blocks_count = #s.board[x + 1]
-  --     local vert_offset = (s.grid_y - blocks_count) * s.block_size
-
-  --     for y = 0, blocks_count - 1 do
-  --       x1 = s.board_x + (x * s.block_size)
-  --       y1 = s.board_y + (y * s.block_size) + vert_offset
-  --       x2 = x1 + s.block_size - 1
-  --       y2 = y1 + s.block_size - 1
-
-  --       rectfill(x1, y1, x2, y2, s.board[x + 1][y + 1])
-  --     end
-  --   end
-  -- end
 
   return s
 end)
@@ -682,3 +746,8 @@ __map__
 0100000000000000000101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0100000000000000000101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0101010101010101010101010101010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+__sfx__
+000100002005023000020000000000000000000000000000000000000000000000000000000000000000100001000000000000000000000000000000000000000000000000000000000000000000000000000000
+000100002305003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000100002055000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000100002355000000000000000000000000000000007500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
