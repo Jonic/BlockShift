@@ -13,6 +13,7 @@ __lua__
 local game_init = function()
   local g = {}
 
+  g.default_state     = 'playing'
   g.frame_multiplier  = 1
   g.high_score        = 0
   g.high_score_beaten = false
@@ -100,19 +101,19 @@ local game_init = function()
     end
 
     g.state = g.states[name]
-    g.state_define()
+    g.state_init()
   end
 
   g.init = function()
-    cartdata('jonic_whatevers')
+    cartdata('jonic_blockshift')
     -- dset(0, 0)
-    g.go_to(g.states[0])
+    g.go_to(g.default_state)
   end
 
   g.reset = function()
     g.objects_destroy_all()
     g.reset_vars()
-    g.state            = g.states[0]
+    g.state            = g.states[g.default_state]
     g.frame_multiplier = 2
   end
 
@@ -126,8 +127,8 @@ local game_init = function()
     g.objects_exec('skip')
   end
 
-  g.state_define = function()
-    printh('g.state_define()')
+  g.state_init = function()
+    printh('g.state_init()')
     if (g.state.init) g.state.init()
   end
 
@@ -158,6 +159,29 @@ local game = game_init()
 
 --> 8
 -- helpers functions
+
+function table_rotate(t, c)
+  l = #t
+
+  if c < 0 then
+    start_index = l + c + 1
+  else
+    start_index = c + 1
+  end
+  printh('start_index: ' .. start_index)
+  new_t = {}
+
+  for index = start_index, l do
+    add(new_t, t[index])
+  end
+
+  for index = 1, start_index - 1 do
+    add(new_t, t[index])
+  end
+
+  return new_t
+end
+
 -- clone and copy from https://gist.github.com/MihailJP/3931841
 function clone(t) -- deep-copy a table
   if type(t) ~= "table" then return t end
@@ -472,21 +496,48 @@ local tiles = {}
 -->8
 -- state definitions
 
-state_define('game', function()
+state_define('playing', function()
   local s = {}
 
-  s.transition = { destination = 'title', timeout = 85 }
-
   s.init = function()
+    printh('playing.init()')
+
+    s.board = {}
+
+    for x = 0, 5 do
+      add(s.board, {})
+      for y = 0, 10 do
+        add(s.board[x + 1], rndint(1, 15))
+        -- printh('s.board[x][y] = ' .. s.board[x + 1][y + 1])
+      end
+    end
   end
 
   s.update = function()
+    if (btnp(0)) s.board = table_rotate(s.board, 1)
+    if (btnp(1)) s.board = table_rotate(s.board, -1)
+
+    if (btnp(2)) s.rotate_columns(1)
+    if (btnp(3)) s.rotate_columns(-1)
   end
 
   s.draw = function()
+    for x = 1, 5 do
+      for y = 1, 10 do
+        x_pos = x * 8
+        y_pos = y * 8
+        rectfill(x_pos, y_pos, x_pos + 8, y_pos + 8, s.board[x][y])
+      end
+    end
   end
 
   -- state methods
+
+  s.rotate_columns = function(c)
+    for x = 1, 5 do
+      s.board[x] = table_rotate(s.board[x], c)
+    end
+  end
 
   return s
 end)
@@ -504,3 +555,12 @@ end
 function _draw()
   game.draw()
 end
+__gfx__
+00000000111ff1110777777700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000000001ff111117777777700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00700700f111111f7700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0007700011111ff17700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00077000111ff1117700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+007007001ff111117700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000f111111f7700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0000000011111ff17700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
