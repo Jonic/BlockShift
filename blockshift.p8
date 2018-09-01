@@ -521,6 +521,7 @@ state_define('playing', function()
     pos_y       = -28,
     y_increment = 4
   }
+  s.can_force_fall    = true
   s.grid_x            = 8
   s.grid_y            = 14
   s.next              = nil
@@ -604,7 +605,8 @@ state_define('playing', function()
       s.rotate_columns(-1)
     end
 
-    if btnp(4) then
+    if btnp(4) and s.can_force_fall then
+      s.can_force_fall = false
       sfx(4)
       s.tick.interval = 0
     end
@@ -703,6 +705,7 @@ state_define('playing', function()
   end
 
   s.spawn_faller = function()
+    s.can_force_fall = true
     s.faller = clone(s.faller_defaults)
 
     for i = 1, 3 do
