@@ -535,16 +535,17 @@ state_define('playing', function()
     pos_y       = -28,
     y_increment = 4
   }
-  s.can_force_fall    = true
-  s.grid_x            = 8
-  s.grid_y            = 14
-  s.hard_fall         = false
-  s.match_table       = {}
-  s.matches           = {}
-  s.next              = nil
-  s.stack_index       = 5
-  s.stack_fail_length = 14
-  s.tick              = {
+  s.can_force_fall       = true
+  s.grid_x               = 8
+  s.grid_y               = 14
+  s.hard_fall            = false
+  s.match_table          = {}
+  s.matches              = {}
+  s.next                 = nil
+  s.should_check_matches = false
+  s.stack_index          = 5
+  s.stack_fail_length    = 14
+  s.tick                 = {
     counter  = 30,
     interval = 30,
     interval_default = 30
@@ -569,9 +570,11 @@ state_define('playing', function()
       s.update_faller()
     end
 
-    if s.check_matches() then
-      s.destroying = true
-      return
+    if s.should_check_matches then
+      s.should_check_matches = false
+      s.check_matches()
+      -- s.destroying = true
+      -- return
     end
 
     if s.controls_active then
@@ -638,25 +641,33 @@ state_define('playing', function()
   end
 
   s.check_input = function()
+    check_matches = false
+
     if btnp(0) and s.can_scroll_to(6) then
+      check_matches = true
       sfx(0)
       s.board = table_rotate(s.board, 1)
     end
 
     if btnp(1) and s.can_scroll_to(4) then
+      check_matches = true
       sfx(1)
       s.board = table_rotate(s.board, -1)
     end
 
     if btnp(2) then
+      check_matches = true
       sfx(3)
       s.rotate_columns(1)
     end
 
     if btnp(3) then
+      check_matches = true
       sfx(2)
       s.rotate_columns(-1)
     end
+
+    s.should_check_matches = check_matches
 
     if btnp(4) and s.can_force_fall then
       s.can_force_fall = false
@@ -865,6 +876,7 @@ state_define('playing', function()
 
     s.faller = nil
     s.tick.interval = s.tick.interval_default
+    s.should_check_matches = true
   end
 
   s.update_blocks = function()
