@@ -539,6 +539,8 @@ state_define('playing', function()
   s.grid_x            = 8
   s.grid_y            = 14
   s.hard_fall         = false
+  s.match_table       = {}
+  s.matches           = {}
   s.next              = nil
   s.stack_index       = 5
   s.stack_fail_length = 14
@@ -588,7 +590,7 @@ state_define('playing', function()
   -- state methods
 
   s.block_exists = function(x, y)
-    return s.board[x][y] ~= nil
+    return s.board[x] ~= nil and s.board[x][y] ~= nil
   end
 
   s.block_key = function()
@@ -596,8 +598,34 @@ state_define('playing', function()
     return 'block_' .. game.block_counter
   end
 
-  s.build_match_table = function(x, y)
+  s.build_match_table = function(x_start, y_start)
+    local match_table = {}
+    local matrix_size = 5
+    local x_end = x_start + matrix_size
+    local y_end = y_start + matrix_size
 
+    for x = x_start, x_end + 5 do
+      for y = y_start, y_end + 5 do
+        if s.block_exists(x, y) then
+          local block = s.board[x][y]
+
+          if block then
+            local block_key = block.key
+            local block_object = o(block_key)
+            local block_spr = block_object.tiles[1].i
+          end
+
+          add(match_table, {
+            spr = block_spr or false,
+            key = block_key or false,
+            x = x,
+            y = y,
+          })
+        end
+      end
+    end
+
+    return match_table
   end
 
   s.can_scroll_to = function(index)
@@ -639,7 +667,60 @@ state_define('playing', function()
   end
 
   s.check_matches = function()
-    return false
+    s.matches = {}
+    local match_combos = {
+      { 25, 19, 13, 7, 1 }, -- diagonal
+      { 5,  4,  3,  2, 1 }, -- horizontal
+      { 21, 16, 11, 6, 1 } -- vertical
+    }
+
+    for x = 1, s.grid_x do
+      local blocks_count = #s.board[x]
+
+      for y = 1, blocks_count do
+        s.match_table = s.build_match_table(x, y)
+        foreach(match_combos, s.perform_match_algorithm)
+      end
+    end
+  end
+
+  s.perform_match_algorithm = function(combo)
+    local start_index = 1
+    local match_value = s.match_table[1].spr
+    local match_found = true
+
+    if not match_value then
+      match_found = false
+    else
+      for i = 2, #combo do
+        match_found = s.match_table[i].spr == match_value
+      end
+    end
+
+    if match_found then
+      s.marked_as_matched(combo, #combo)
+      return
+    else
+      del(combo, combo[1])
+      if #combo > 2 then
+        s.perform_match_algorithm(combo)
+      end
+    end
+  end
+
+  s.marked_as_matched = function(combo, length)
+    foreach(combo, function(i)
+      local key = s.match_table[i].key
+      printh('match on key: ' .. key)
+
+      if s.matches.key ~= nil then
+        s.matches.key = {
+          matched = length,
+          x = s.match_table[i].x,
+          y = s.match_table[i].y,
+        }
+      end
+    end)
   end
 
   s.draw_board = function()
@@ -793,7 +874,7 @@ state_define('playing', function()
       for y = 1, blocks_count do
         local block = s.board[x][y]
         local pos_x, pos_y = s.get_block_pos(x, y)
-        o(block['key']).pos({ x = pos_x, y = pos_y })
+        o(block.key).pos({ x = pos_x, y = pos_y })
       end
     end
   end
