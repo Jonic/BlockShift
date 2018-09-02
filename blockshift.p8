@@ -661,13 +661,13 @@ state_define('playing', function()
     if btnp(2) then
       check_matches = true
       sfx(3)
-      s.rotate_columns(1)
+      s.rotate_columns(-1)
     end
 
     if btnp(3) then
       check_matches = true
       sfx(2)
-      s.rotate_columns(-1)
+      s.rotate_columns(1)
     end
 
     s.should_check_matches = check_matches
