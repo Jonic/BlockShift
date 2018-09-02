@@ -587,8 +587,6 @@ state_define('playing', function()
       s.update_faller()
     end
 
-    printh('s.should_check_matches:')
-    printh(s.should_check_matches)
     if s.should_check_matches then
       s.should_check_matches = false
       s.update_blocks()
@@ -690,7 +688,6 @@ state_define('playing', function()
       s.rotate_columns(1)
     end
 
-    printh('controller override')
     s.should_check_matches = check_matches
 
     if btnp(4) and s.can_force_fall then
