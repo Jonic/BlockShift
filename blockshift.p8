@@ -526,7 +526,7 @@ state_define('playing', function()
   s.board_x         = 8
   s.board_y         = 120
   s.controls_active = true
-  s.destroying      = false
+  s.destroy_timeout = 0
   s.faller          = nil
   s.faller_defaults = {
     height      = 3,
@@ -536,6 +536,7 @@ state_define('playing', function()
     y_increment = 4
   }
   s.can_force_fall       = true
+  s.flash_rects          = {}
   s.grid_x               = 8
   s.grid_y               = 14
   s.hard_fall            = false
@@ -547,8 +548,8 @@ state_define('playing', function()
   s.stack_fail_length    = 14
   s.tick                 = {
     counter  = 30,
-    interval = 30,
-    interval_default = 30
+    interval = 5,
+    interval_default = 5
   }
 
   s.init = function()
@@ -562,9 +563,20 @@ state_define('playing', function()
   end
 
   s.update = function()
-    if (#s.matches > 0) then
-      s.remove_matches()
+    s.check_game_over()
+
+    if s.destroy_timeout > 0 then
+      s.destroy_timeout -= 1
+      foreach(s.flash_rects, function(flash_rect)
+        s.flash_rect(flash_rect)
+      end)
       return
+    end
+
+    s.destroy_objects()
+
+    if s.controls_active then
+      s.check_input()
     end
 
     if s.faller == nil then
@@ -575,17 +587,28 @@ state_define('playing', function()
       s.update_faller()
     end
 
+    printh('s.should_check_matches:')
+    printh(s.should_check_matches)
     if s.should_check_matches then
       s.should_check_matches = false
+      s.update_blocks()
       s.check_matches()
-      -- s.destroying = true
-      -- return
+      return
     end
 
-    if s.controls_active then
-      s.check_input()
-      s.update_blocks()
+    s.update_blocks()
+  end
+
+  s.destroy_objects = function()
+    if #s.flash_rects == 0 then
+      return
     end
+
+    foreach(s.flash_rects, function(flash_rect)
+      game.object_destroy(flash_rect.key)
+    end)
+
+    s.flash_rects = {}
   end
 
   s.draw = function()
@@ -608,12 +631,9 @@ state_define('playing', function()
 
   s.build_match_table = function(x_start, y_start)
     local match_table = {}
-    local matrix_size = 5
-    local x_end = x_start + (matrix_size - 1)
-    local y_end = y_start + (matrix_size - 1)
 
-    for x = x_start, x_end do
-      for y = y_start, y_end do
+    for y = y_start, y_start + 4 do
+      for x = x_start - 4, x_start + 4 do
         local block_props = {
           x = x,
           y = y,
@@ -670,6 +690,7 @@ state_define('playing', function()
       s.rotate_columns(1)
     end
 
+    printh('controller override')
     s.should_check_matches = check_matches
 
     if btnp(4) and s.can_force_fall then
@@ -682,19 +703,34 @@ state_define('playing', function()
 
   s.check_matches = function()
     s.matches = {}
+    --  -----------------
+    -- |3| | | |2| | | |4|
+    -- | |3| | |2| | |4| |
+    -- | | |3| |2| |4| | |
+    -- | | | |3|2|4| | | |
+    -- | | | | |*|1|1|1|1|
+    --  -----------------
     local match_combos = {
-      { 25, 19, 13, 7, 1 }, -- diagonal
-      { 5,  4,  3,  2, 1 }, -- horizontal
-      { 21, 16, 11, 6, 1 } -- vertical
+      -- numbers descend heading towards the asterisk in the diagram
+      { 9,  8,  7,  6,  5 }, -- horizontal  (1)
+      { 41, 32, 23, 14, 5 }, -- vertical    (2)
+      { 36, 29, 21, 13, 5 }, -- tl diagonal (3)
+      { 45, 35, 25, 15, 5 }  -- tr diagonal (4)
     }
 
     for x = 1, s.grid_x do
       for y = 1, s.grid_y do
-        s.match_table = s.build_match_table(x, y)
-        foreach(match_combos, function(combo)
-          s.perform_match_algorithm(copy(combo))
-        end)
+        if s.block_exists(x, y) then
+          s.match_table = s.build_match_table(x, y)
+          foreach(match_combos, function(combo)
+            s.perform_match_algorithm(copy(combo))
+          end)
+        end
       end
+    end
+
+    if (#s.matches > 0) then
+      s.remove_matches()
     end
   end
 
@@ -708,6 +744,7 @@ state_define('playing', function()
   end
 
   s.perform_match_algorithm = function(combo)
+    local c = combo
     local start_index = combo[1]
     local subject = s.match_table[start_index]
     local match_value = subject and subject.spr
@@ -716,43 +753,49 @@ state_define('playing', function()
     if not match_value then
       match_found = false
     else
-      printh('----')
-      printh('matching on: ' .. match_value)
       for i = 2, #combo do
         if match_found then
           local current_index = combo[i]
-          printh(s.match_table[current_index].spr)
           match_found = s.match_table[current_index].spr == match_value
         end
       end
-      printh(match_found)
-      printh('----')
     end
 
     if match_found then
-      s.marked_as_matched(combo, #combo)
-      return
-    else
-      del(combo, combo[1])
-      if #combo > 2 then
-        s.perform_match_algorithm(combo)
-      end
+      return s.marked_as_matched(combo, #combo)
+    end
+
+    del(combo, combo[1])
+    if #combo > 2 then
+      return s.perform_match_algorithm(combo)
     end
   end
 
   s.remove_matches = function()
+    sfx(9)
     s.controls_active = false
+    s.destroy_timeout = 30
 
     foreach(s.matches, function(match)
-      game.object_destroy(match.key)
       local col = s.board[match.x]
       local block = col[match.y]
+      add(s.flash_rects, match)
       del(col, block)
     end)
 
+    s.should_check_matches = true
     s.controls_active = true
+  end
 
-    s.check_matches()
+  s.flash_rect = function(rect_obj)
+    local color = 1
+    local pos_x, pos_y = s.get_block_pos(rect_obj.x, rect_obj.y)
+
+    if s.destroy_timeout % 2 then
+      local color = 2
+    end
+
+    rect(pos_x, pos_yz, pos_x + s.block_size, pos_y + s.block_size, color)
   end
 
   s.marked_as_matched = function(combo, length)
@@ -764,7 +807,6 @@ state_define('playing', function()
         x = subject.x,
         y = subject.y,
       }
-      printh('match on key: ' .. subject.key .. ' - ' .. subject.spr)
 
       del(s.matches, matched_props)
       add(s.matches, matched_props)
@@ -906,14 +948,16 @@ state_define('playing', function()
       })
     end
 
+    s.faller = nil
+    s.tick.interval = s.tick.interval_default
+    s.should_check_matches = true
+  end
+
+  s.check_game_over = function()
     if #s.board[5] > s.stack_fail_length then
       sfx(7)
       go_to('game_over')
     end
-
-    s.faller = nil
-    s.tick.interval = s.tick.interval_default
-    s.should_check_matches = true
   end
 
   s.update_blocks = function()
@@ -1012,3 +1056,4 @@ __sfx__
 0001000019050170501605014050100500e0500d0500b0500a0500a05000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000100002212021120201201f1201e1201d1201b1201a120191201812018120000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0001000010020100200f0200e0000d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+000100001c0501c0501c0501c0501d050000002205000000260502705000000190501b0501c0501d0501f0501f050210502505000000290502b05000000000000000000000000000000000000000000000000000
