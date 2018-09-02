@@ -604,11 +604,11 @@ state_define('playing', function()
   s.build_match_table = function(x_start, y_start)
     local match_table = {}
     local matrix_size = 5
-    local x_end = x_start + matrix_size
-    local y_end = y_start + matrix_size
+    local x_end = x_start + (matrix_size - 1)
+    local y_end = y_start + (matrix_size - 1)
 
-    for x = x_start, x_end + 5 do
-      for y = y_start, y_end + 5 do
+    for x = x_start, x_end do
+      for y = y_start, y_end do
         if s.block_exists(x, y) then
           local block = s.board[x][y]
 
@@ -617,14 +617,14 @@ state_define('playing', function()
             local block_object = o(block_key)
             local block_spr = block_object.tiles[1].i
           end
-
-          add(match_table, {
-            spr = block_spr or false,
-            key = block_key or false,
-            x = x,
-            y = y,
-          })
         end
+
+        add(match_table, {
+          spr = block_spr or false,
+          key = block_key or false,
+          x = x,
+          y = y,
+        })
       end
     end
 
