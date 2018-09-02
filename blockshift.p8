@@ -562,7 +562,10 @@ state_define('playing', function()
   end
 
   s.update = function()
-    if (s.destroying) return
+    if (#s.matches > 0) then
+      s.remove_matches()
+      return
+    end
 
     if s.faller == nil then
       return s.spawn_faller()
@@ -611,22 +614,20 @@ state_define('playing', function()
 
     for x = x_start, x_end do
       for y = y_start, y_end do
-        if s.block_exists(x, y) then
-          local block = s.board[x][y]
-
-          if block then
-            local block_key = block.key
-            local block_object = o(block_key)
-            local block_spr = block_object.tiles[1].i
-          end
-        end
-
-        add(match_table, {
-          spr = block_spr or false,
-          key = block_key or false,
+        local block_props = {
           x = x,
           y = y,
-        })
+        }
+
+        if s.block_exists(x, y) then
+          local block = s.board[x][y]
+          local block_object = o(block.key)
+
+          block_props['spr'] = block_object.tiles[1].i
+          block_props['key'] = block.key
+        end
+
+        add(match_table, block_props)
       end
     end
 
@@ -702,38 +703,36 @@ state_define('playing', function()
       object_define('track_' .. i, {
         tiles = {
           { i = 8 }
-        }, x = 40, y = i * s.block_size
-      })
+        }, x = 40, y = i * s.block_size })
     end
   end
 
   s.perform_match_algorithm = function(combo)
     local start_index = combo[1]
-    printh(#s.match_table)
     local subject = s.match_table[start_index]
-    local match_value = subject ~= nil and subject.spr
+    local match_value = subject and subject.spr
     local match_found = true
 
     if not match_value then
-      printh('no match_value')
       match_found = false
     else
-      printh('match value: ' .. match_value)
-      printh('checking combo')
+      printh('----')
+      printh('matching on: ' .. match_value)
       for i = 2, #combo do
-        local table_index = combo[i]
-        printh('match on: ' .. match_value)
-        printh('  current: ' .. s.match_table[table_index].spr)
-        match_found = s.match_table[table_index].spr == match_value
+        if match_found then
+          local current_index = combo[i]
+          printh(s.match_table[current_index].spr)
+          match_found = s.match_table[current_index].spr == match_value
+        end
       end
+      printh(match_found)
+      printh('----')
     end
 
     if match_found then
-      printh('matches found!')
       s.marked_as_matched(combo, #combo)
       return
     else
-      printh('no matches found!')
       del(combo, combo[1])
       if #combo > 2 then
         s.perform_match_algorithm(combo)
@@ -741,18 +740,30 @@ state_define('playing', function()
     end
   end
 
+  s.remove_matches = function()
+    foreach(s.matches, function(match)
+      game.object_destroy(match.key)
+      local col = s.board[match.x]
+      local block = col[match.y]
+      del(col, block)
+    end)
+
+    s.matches = {}
+  end
+
   s.marked_as_matched = function(combo, length)
     foreach(combo, function(i)
-      local key = s.match_table[i].key
-      printh('match on key: ' .. key)
+      local subject = s.match_table[i]
+      local matched_props = {
+        key = subject.key,
+        matched = length,
+        x = subject.x,
+        y = subject.y,
+      }
+      printh('match on key: ' .. subject.key .. ' - ' .. subject.spr)
 
-      if s.matches.key ~= nil then
-        s.matches.key = {
-          matched = length,
-          x = s.match_table[i].x,
-          y = s.match_table[i].y,
-        }
-      end
+      del(s.matches, matched_props)
+      add(s.matches, matched_props)
     end)
   end
 
