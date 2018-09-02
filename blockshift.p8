@@ -21,12 +21,14 @@ local game_init = function()
   g.objects           = {}
   g.objects_order     = {}
   g.score             = 0
+  g.shake             = 0
   g.state             = nil
   g.states            = {}
 
   g.draw = function()
     cls()
 
+    g.screen_shake()
     g.objects_exec('draw')
     g.state.draw()
   end
@@ -131,6 +133,17 @@ local game_init = function()
     g.high_score        = dget(0)
     g.high_score_beaten = false
     g.score             = 0
+  end
+
+  g.screen_shake = function()
+    -- celeste screenshake, y'all
+    if g.shake > 0 then
+      g.shake -= 1
+      camera()
+      if g.shake > 0 then
+        camera(-2 + rnd(5), -2 + rnd(5))
+      end
+    end
   end
 
   g.skip_animations = function()
@@ -512,6 +525,7 @@ state_define('playing', function()
   s.board           = {}
   s.board_x         = 8
   s.board_y         = 8
+  s.controls_active = true
   s.destroying      = false
   s.faller          = nil
   s.faller_defaults = {
@@ -524,6 +538,7 @@ state_define('playing', function()
   s.can_force_fall    = true
   s.grid_x            = 8
   s.grid_y            = 14
+  s.hard_fall         = false
   s.next              = nil
   s.stack_index       = 5
   s.stack_fail_length = 14
@@ -557,8 +572,10 @@ state_define('playing', function()
       return
     end
 
-    s.check_input()
-    s.update_blocks()
+    if s.controls_active then
+      s.check_input()
+      s.update_blocks()
+    end
   end
 
   s.draw = function()
@@ -608,6 +625,7 @@ state_define('playing', function()
     if btnp(4) and s.can_force_fall then
       s.can_force_fall = false
       sfx(4)
+      s.hard_fall = true
       s.tick.interval = 0
     end
   end
@@ -799,7 +817,14 @@ state_define('playing', function()
         })
       end
     else
-      sfx(6)
+      if s.hard_fall then
+        sfx(6)
+        game.shake = 2
+        s.hard_fall = false
+      else
+        sfx(8)
+      end
+
       s.transfer_faller_to_board()
     end
   end
@@ -859,7 +884,8 @@ __sfx__
 000100002305003000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000100002055000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000100002355000000000000000000000000000000007500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-00010000310502e050350502d0002b0002e0001c4000d3000e0000d0000c0000b0000b0000a0000a0003300033000320002f0002d000000000000000000000000000000000000000000000000000000000000000
+000100001502016020170202d0002b0002e0001c4000d3000e0000d0000c0000b0000b0000a0000a0003300033000320002f0002d000000000000000000000000000000000000000000000000000000000000000
 001000001a050160501405011050110500f050000000f0500e0500e05000000050500305001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0001000019050170501605014050100500e0500d0500b0500a0500a05000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000100002212021120201201f1201e1201d1201b1201a120191201812018120000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+0001000010020100200f0200e0000d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
