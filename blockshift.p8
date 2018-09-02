@@ -748,7 +748,7 @@ state_define('playing', function()
       del(col, block)
     end)
 
-    s.matches = {}
+    s.check_matches()
   end
 
   s.marked_as_matched = function(combo, length)
