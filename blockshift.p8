@@ -524,7 +524,7 @@ state_define('playing', function()
   s.block_size      = 8
   s.board           = {}
   s.board_x         = 8
-  s.board_y         = 8
+  s.board_y         = 120
   s.controls_active = true
   s.destroying      = false
   s.faller          = nil
@@ -587,9 +587,17 @@ state_define('playing', function()
 
   -- state methods
 
+  s.block_exists = function(x, y)
+    return s.board[x][y] ~= nil
+  end
+
   s.block_key = function()
     game.increment_block_counter()
     return 'block_' .. game.block_counter
+  end
+
+  s.build_match_table = function(x, y)
+
   end
 
   s.can_scroll_to = function(index)
@@ -692,12 +700,8 @@ state_define('playing', function()
   end
 
   s.get_block_pos = function(x, y)
-    local blocks_count = #s.board[x]
-    local vert_offset = (s.grid_y - blocks_count) * s.block_size
-
     pos_x = s.board_x + (x * s.block_size) - s.block_size
-    pos_y = s.board_y + (y * s.block_size) - s.block_size + vert_offset
-
+    pos_y = s.board_y - (y * s.block_size)
     return pos_x, pos_y
   end
 
@@ -761,32 +765,23 @@ state_define('playing', function()
   end
 
   s.transfer_faller_to_board = function()
-    new_stack = {}
-    for i = 1, 3 do
+    for i = 3, 1, -1 do
       local block_object = o('faller_' .. i)
       local key = s.block_key()
+
       object_define(key, { tiles = block_object.tiles })
-      add(new_stack, {
+      add(s.board[5], {
         key = key,
         match_checked = false,
         remove = false
       })
     end
 
-    foreach(s.board[5], function(transfer_block)
-      add(new_stack, {
-        key = transfer_block.key,
-        match_checked = false,
-        remove = false
-      })
-    end)
-
-    if #new_stack > s.stack_fail_length then
+    if #s.board[5] > s.stack_fail_length then
       sfx(7)
       go_to('game_over')
     end
 
-    s.board[5] = new_stack
     s.faller = nil
     s.tick.interval = s.tick.interval_default
   end
@@ -797,10 +792,8 @@ state_define('playing', function()
 
       for y = 1, blocks_count do
         local block = s.board[x][y]
-        local key = block['key']
-        printh(key)
         local pos_x, pos_y = s.get_block_pos(x, y)
-        o(key).pos({ x = pos_x, y = pos_y })
+        o(block['key']).pos({ x = pos_x, y = pos_y })
       end
     end
   end
