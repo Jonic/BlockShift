@@ -741,12 +741,16 @@ state_define('playing', function()
   end
 
   s.remove_matches = function()
+    s.controls_active = false
+
     foreach(s.matches, function(match)
       game.object_destroy(match.key)
       local col = s.board[match.x]
       local block = col[match.y]
       del(col, block)
     end)
+
+    s.controls_active = true
 
     s.check_matches()
   end
