@@ -14,7 +14,7 @@ local game_init = function()
   local g = {}
 
   g.block_counter     = 0
-  g.default_state     = 'playing'
+  g.default_state     = 'title'
   g.frame_multiplier  = 1
   g.high_score        = 0
   g.high_score_beaten = false
@@ -170,8 +170,8 @@ local game_init = function()
     dset(0, g.high_score)
   end
 
-  g.update_score = function()
-    g.score += 1
+  g.update_score = function(score)
+    g.score += score
     if (g.score > g.high_score) g.update_high_score()
   end
 
@@ -518,6 +518,40 @@ local tiles = {}
 -->8
 -- state definitions
 
+state_define('title', function()
+  local s = {}
+
+  local text = {
+    'blockshift',
+    '----',
+    "it's a match 3 game",
+    "but you can't move the piece",
+    '----',
+    'left / right to move columns',
+    'up down to cycle blocks',
+    'z to fast-drop',
+    'match 3+ blocks to clear',
+    '----',
+    'press x to play',
+    '----',
+    '2018 jonic.itch.io',
+    'made for gmtk-jam 2018'
+  }
+
+  s.draw = function()
+    for i = 1, #text do
+      local str = text[i]
+      print(str, 8, 8 * i, i)
+    end
+  end
+
+  s.update = function()
+    if (btnp(5)) game.go_to('playing')
+  end
+
+  return s
+end)
+
 state_define('playing', function()
   local s = {}
 
@@ -537,12 +571,14 @@ state_define('playing', function()
   }
   s.can_force_fall       = true
   s.flash_rects          = {}
+  s.game_over            = false
   s.grid_x               = 8
   s.grid_y               = 14
   s.hard_fall            = false
   s.match_table          = {}
   s.matches              = {}
   s.next                 = nil
+  s.score                = 0
   s.should_check_matches = false
   s.stack_index          = 5
   s.stack_fail_length    = 14
@@ -553,17 +589,25 @@ state_define('playing', function()
   }
 
   s.init = function()
-    s.create_faller_track()
+    game.objects_destroy_all()
+
+    s.game_over = false
+    s.board = {}
 
     for x = 1, s.grid_x do
       add(s.board, {})
     end
 
+    s.create_faller_track()
     s.spawn_next()
   end
 
   s.update = function()
     s.check_game_over()
+
+    if s.game_over then
+      return
+    end
 
     if s.destroy_timeout > 0 then
       s.destroy_timeout -= 1
@@ -600,6 +644,7 @@ state_define('playing', function()
 
     s.draw_board()
     s.draw_next()
+    s.draw_score()
 
     if s.destroy_timeout > 0 then
       foreach(s.flash_rects, function(flash_rect)
@@ -655,8 +700,7 @@ state_define('playing', function()
 
   s.check_game_over = function()
     if #s.board[5] > s.stack_fail_length then
-      sfx(7)
-      go_to('game_over')
+      game.go_to('game_over')
     end
   end
 
@@ -794,6 +838,11 @@ state_define('playing', function()
     print('next:', 86, 18, 7)
   end
 
+  s.draw_score = function()
+    print('score:', 86, 50, 7)
+    print(game.score, 86, 58, 7)
+  end
+
   s.faller_can_fall = function()
     local next_pos_y = s.faller.pos_y + s.faller.y_increment
 
@@ -879,6 +928,7 @@ state_define('playing', function()
     foreach(s.matches, function(match)
       local col = s.board[match.x]
       local block = col[match.y]
+      game.update_score(match.matched)
       add(s.flash_rects, copy(match))
       del(col, block)
     end)
@@ -909,13 +959,19 @@ state_define('playing', function()
   end
 
   s.spawn_faller = function()
+    if s.game_over then
+      return
+    end
+
     s.can_force_fall = true
     s.faller = clone(s.faller_defaults)
 
     for i = 1, 3 do
       local block_object = o(s.next[i])
       local key = 'faller_' .. i
-      object_define(key, { tiles = block_object.tiles })
+      if block_object then
+        object_define(key, { tiles = block_object.tiles })
+      end
     end
 
     s.spawn_next()
@@ -998,6 +1054,46 @@ state_define('playing', function()
 
       s.transfer_faller_to_board()
     end
+  end
+
+  return s
+end)
+
+state_define('game_over', function()
+  local s = {}
+
+  s.init = function()
+    sfx(5)
+  end
+
+  s.draw = function()
+    rectfill(0,0,127,127,0)
+    local score_text = 'you scored: ' .. game.score
+
+    local text = {
+      'game over',
+      '----',
+      score_text
+    }
+
+    if (game.high_score_beaten) then
+      add(text, '----')
+      add(text, "that's a new high score")
+      add(text, '... go you')
+    end
+
+    add(text, '----')
+    add(text, 'press x to play again')
+
+    for i = 1, #text do
+      local str = text[i]
+      print(str, 8, 8 * i, i)
+    end
+  end
+
+  s.update = function()
+    if (btnp(4)) game.go_to('title')
+    if (btnp(5)) game.go_to('playing')
   end
 
   return s
