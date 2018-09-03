@@ -613,7 +613,6 @@ state_define('playing', function()
   s.init = function()
     game.objects_destroy_all()
 
-    s.game_over = false
     s.board = {}
 
     for x = 1, s.grid_x do
@@ -625,9 +624,8 @@ state_define('playing', function()
   end
 
   s.update = function()
-    s.check_game_over()
-
-    if s.game_over then
+    if s.game_over() then
+      game.go_to('game_over')
       return
     end
 
@@ -717,10 +715,8 @@ state_define('playing', function()
     return true
   end
 
-  s.check_game_over = function()
-    if #s.board[5] > s.stack_fail_length then
-      game.go_to('game_over')
-    end
+  s.game_over = function()
+    return #s.board[5] > s.stack_fail_length
   end
 
   s.check_input = function()
@@ -979,10 +975,6 @@ state_define('playing', function()
   end
 
   s.spawn_faller = function()
-    if s.game_over then
-      return
-    end
-
     s.can_force_fall = true
     s.faller = clone(s.faller_defaults)
 
