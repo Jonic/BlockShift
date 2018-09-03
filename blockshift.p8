@@ -718,10 +718,6 @@ state_define('playing', function()
     return true
   end
 
-  s.game_over = function()
-    return #s.board[5] > s.stack_fail_length
-  end
-
   s.check_input = function()
     check_matches = false
 
@@ -882,6 +878,10 @@ state_define('playing', function()
     local y2 = y1 + s.block_size - 1
 
     rect(x1, y1, x2, y2, color)
+  end
+
+  s.game_over = function()
+    return #s.board[5] > s.stack_fail_length
   end
 
   s.get_block_pos = function(x, y)
