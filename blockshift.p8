@@ -493,12 +493,12 @@ function state_define(name, props)
   s.props       = props()
 
   s.draw = function()
-    if (s.should_flash()) return s.draw_flash()
+    if (s.should_screen_flash()) return s.draw_screen_flash()
     if (s.props.draw) s.props.draw()
   end
 
-  s.draw_flash = function()
-    rectfill(0, 0, 127, 127, s.props.flash.color)
+  s.draw_screen_flash = function()
+    rectfill(0, 0, 127, 127, s.props.screen_flash.color)
   end
 
   s.init = function()
@@ -506,8 +506,8 @@ function state_define(name, props)
     if (s.props.init) s.props.init()
   end
 
-  s.should_flash = function()
-    return (s.props.flash ~= nil) and (s.props.flash.on == s.frame_count)
+  s.should_screen_flash = function()
+    return (s.props.screen_flash ~= nil) and (s.props.screen_flash.on == s.frame_count)
   end
 
   s.unload = function()
