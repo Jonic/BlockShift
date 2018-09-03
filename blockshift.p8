@@ -24,6 +24,7 @@ local game_init = function()
   g.shake             = 0
   g.state             = nil
   g.states            = {}
+  g.wait_timers       = {}
 
   g.draw = function()
     cls()
@@ -173,6 +174,27 @@ local game_init = function()
   g.update_score = function(score)
     g.score += score
     if (g.score > g.high_score) g.update_high_score()
+  end
+
+  g.wait = function(timer_key, timeout)
+    g.wait_timers[timer_key] = timeout
+  end
+
+  g.waiting = function(timer_key)
+    local timer = g.wait_timers[timer_key]
+
+    if timer then
+      if timer == 0 then
+        del(g.wait_timers, g.wait_timers[timer_key])
+      end
+
+      if timer > 0 then
+        g.wait_timers[timer_key] -= 1
+        return true
+      end
+    end
+
+    return false
   end
 
   return g
@@ -555,12 +577,12 @@ end)
 state_define('playing', function()
   local s = {}
 
+  s.block_removal_timeout = 30
   s.block_size      = 8
   s.board           = {}
   s.board_x         = 8
   s.board_y         = 120
   s.controls_active = true
-  s.destroy_timeout = 0
   s.faller          = nil
   s.faller_defaults = {
     height      = 3,
@@ -609,8 +631,7 @@ state_define('playing', function()
       return
     end
 
-    if s.destroy_timeout > 0 then
-      s.destroy_timeout -= 1
+    if game.waiting('block_removal') then
       return
     end
 
@@ -646,11 +667,9 @@ state_define('playing', function()
     s.draw_next()
     s.draw_score()
 
-    if s.destroy_timeout > 0 then
       foreach(s.flash_rects, function(flash_rect)
         s.flash_rect(flash_rect)
       end)
-    end
   end
 
   -- state methods
@@ -859,8 +878,9 @@ state_define('playing', function()
 
   s.flash_rect = function(rect_obj)
     local color = 1
+    local flash_timer = game.wait_timers['block_removal']
 
-    if (s.destroy_timeout % 2 == 1) then
+    if (flash_timer % 2 == 1) then
       color = 2
     end
 
@@ -923,7 +943,7 @@ state_define('playing', function()
   s.remove_matches = function()
     sfx(9)
     s.controls_active = false
-    s.destroy_timeout = 30
+    game.wait('block_removal', s.block_removal_timeout)
 
     foreach(s.matches, function(match)
       local col = s.board[match.x]
