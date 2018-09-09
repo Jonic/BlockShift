@@ -46,14 +46,14 @@ local game_init = function()
     return g.frame_counter
   end
 
-  g.go_to = function(name)
-    -- printh('state: `' .. name .. '`')
+  g.go_to = function(id)
+    -- printh('state: `' .. id .. '`')
     if g.state then
       g.skip_animations()
       g.state_unload()
     end
 
-    g.state = g.states[name]
+    g.state = g.states[id]
     g.state_init()
   end
 
@@ -71,28 +71,28 @@ local game_init = function()
     g.go_to(g.default_state)
   end
 
-  g.object_add = function(name, o)
-    add(g.objects_order, name)
-    g.objects[name] = o
+  g.object_add = function(id, o)
+    add(g.objects_order, id)
+    g.objects[id] = o
     -- g.object_debug()
   end
 
   g.object_debug = function()
     local debug = ''
 
-    foreach (g.objects_order, function(name)
-      debug = debug .. name .. ', '
+    foreach (g.objects_order, function(id)
+      debug = debug .. id .. ', '
     end)
 
     printh(debug)
   end
 
-  g.object_destroy = function(name)
-    local index = g.object_get_order_index(name)
-    local o     = g.objects[name]
+  g.object_destroy = function(id)
+    local index = g.object_get_order_index(id)
+    local o     = g.objects[id]
 
     if (index ~= nil) then
-      -- printh('remove object: `' .. name .. '`')
+      -- printh('remove object: `' .. id .. '`')
       g.objects_order[index] = nil
       del(g.objects, o)
     end
@@ -100,16 +100,16 @@ local game_init = function()
     -- g.object_debug()
   end
 
-  g.object_get_order_index = function(name)
+  g.object_get_order_index = function(id)
     for i, v in pairs(g.objects_order) do
-      if (v == name) return i
+      if (v == id) return i
     end
   end
 
-  g.object_restack = function(name)
-    local index = g.object_get_order_index(name)
+  g.object_restack = function(id)
+    local index = g.object_get_order_index(id)
     g.objects_order[index] = nil
-    add(g.objects_order, name)
+    add(g.objects_order, id)
   end
 
   g.objects_destroy = function(objects_list)
@@ -124,8 +124,8 @@ local game_init = function()
   g.objects_exec = function(fn)
     local obj
 
-    for _, name in pairs(g.objects_order) do
-      obj = g.objects[name]
+    for _, id in pairs(g.objects_order) do
+      obj = g.objects[id]
       if (obj[fn] ~= nil) obj[fn]()
     end
   end
@@ -283,8 +283,8 @@ function f(n)
   return n * game.frame_multiplier
 end
 
-function o(name)
-  return game.objects[name]
+function o(id)
+  return game.objects[id]
 end
 
 function rnd_int(min, max)
@@ -331,15 +331,16 @@ end
 
 -->8
 -- init objects and states
-function object_define(name, props)
-  game.object_destroy(name)
-  -- printh('object: created `' .. name .. '`')
+function object_define(id, props)
+  game.object_destroy(id)
+  -- printh('object: created `' .. id .. '`')
 
   local o = {}
 
   o.color       = props.color   or 7
+  o.data_attrs  = props.data    or {}
   o.frame_count = 0
-  o.name        = name
+  o.id          = id
   o.outline     = props.outline or nil
   o.rects       = props.rects   or nil
   o.text        = props.text    or nil
@@ -351,6 +352,22 @@ function object_define(name, props)
   o.center_x = function()
     local text = o.text .. ''
     return 64 - #text * 2
+  end
+
+  o.data = function(key, value)
+    if not value then
+      return o.data_get(key)
+    end
+
+    return o.data_set(key, value)
+  end
+
+  o.data_get = function(key)
+    return o.data_attrs[key]
+  end
+
+  o.data_set = function(key, value)
+    return o.data_attrs[key] = value
   end
 
   o.draw_rect = function(r)
@@ -492,16 +509,16 @@ function object_define(name, props)
     if (o.is_rects())  return o.draw_rects(o.rects)
   end
 
-  game.object_add(name, o)
+  game.object_add(id, o)
 
   return o
 end
 
-function state_define(name, props)
+function state_define(id, props)
   local s = {}
 
   s.frame_count = 0
-  s.name        = name
+  s.id          = id
   s.props       = props()
 
   s.draw = function()
@@ -542,7 +559,7 @@ function state_define(name, props)
     if (s.props.update) s.props.update()
   end
 
-  game.states[name] = s
+  game.states[id] = s
 
   return s
 end
