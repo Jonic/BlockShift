@@ -15,6 +15,7 @@ local game_init = function()
 
   g.block_counter     = 0
   g.default_state     = 'title'
+  g.frame_counter     = 0
   g.frame_multiplier  = 1
   g.high_score        = 0
   g.high_score_beaten = false
@@ -33,6 +34,16 @@ local game_init = function()
     g.state.draw()
     g.objects_exec('draw')
     g.state.draw_late()
+  end
+
+  g.frame = function()
+    g.frame_counter += 1
+
+    if g.frame_counter > 10000 then
+      g.frame_counter = 0
+    end
+
+    return g.frame_counter
   end
 
   g.go_to = function(name)
@@ -587,7 +598,7 @@ state_define('playing', function()
   s.board                 = {}
   s.board_x               = 8
   s.board_y               = 120
-  s.can_force_fall        = true
+  s.can_hard_fall         = true
   s.controls_active       = true
   s.faller                = nil
   s.faller_defaults       = {
@@ -597,65 +608,55 @@ state_define('playing', function()
     pos_y       = -28,
     y_increment = 4
   }
-  s.flashes              = {}
-  s.grid_x               = 8
-  s.grid_y               = 14
-  s.hard_fall            = false
-  s.match_table          = {}
-  s.matches              = {}
-  s.next                 = nil
-  s.score                = 0
-  s.should_check_matches = false
-  s.stack_index          = 5
-  s.stack_fail_length    = 14
-  s.tick                 = {
-    counter          = 30,
-    interval         = 5,
-    interval_default = 5
+  s.flashes               = {}
+  s.grid_x                = 8
+  s.grid_y                = 14
+  s.hard_fall             = false
+  --  -----------------
+  -- |3| | | |2| | | |4|
+  -- | |3| | |2| | |4| |
+  -- | | |3| |2| |4| | |
+  -- | | | |3|2|4| | | |
+  -- | | | | |*|1|1|1|1|
+  --  -----------------
+  s.match_combos = {
+    -- numbers descend heading towards the asterisk in the diagram
+    { 9,  8,  7,  6,  5 }, -- horizontal  (1)
+    { 41, 32, 23, 14, 5 }, -- vertical    (2)
+    { 36, 29, 21, 13, 5 }, -- tl diagonal (3)
+    { 45, 35, 25, 15, 5 }  -- tr diagonal (4)
   }
+  s.match_table           = {}
+  s.matches               = {}
+  s.next                  = nil
+  s.perform_check_matches = false
+  s.stack_index           = 5
+  s.stack_fail_height     = 14
+  s.ticked                = false
+  s.tick_counter          = 0
+  s.tick_timeout          = 30
+  s.tick_timeout_default  = 30
+  s.tick_timeout_fast     = 0
 
   s.init = function()
-    s.board = {}
-
-    for x = 1, s.grid_x do
-      add(s.board, {})
-    end
-
-    s.spawn_next()
+    s.init_board()
+    s.init_next()
   end
 
   s.update = function()
-    if s.game_over() then
-      game.go_to('game_over')
-      return
-    end
-
     if game.waiting('block_removal') then
       return
     end
 
-    s.destroy_objects()
-
-    if s.controls_active then
-      s.check_input()
-    end
-
-    if s.faller == nil then
-      return s.spawn_faller()
-    end
-
-    if s.should_tick() then
-      s.update_faller()
-    end
-
-    if s.should_check_matches then
-      s.should_check_matches = false
-      s.update_blocks()
-      s.check_matches()
-      return
-    end
-
+    s.remove_matches()
+    s.tick()
+    s.update_reset()
+    s.check_input()
+    s.check_faller()
     s.update_blocks()
+    s.check_matches()
+    s.check_game_over()
+    s.reset_ticked()
   end
 
   s.draw = function()
@@ -666,117 +667,118 @@ state_define('playing', function()
 
   s.draw_late = function()
     clip()
-    printh('draw_late')
     s.draw_board()
     s.draw_next()
     s.draw_score()
     s.draw_flashes()
   end
 
-  -- state methods
+  -- init methods
 
-  s.block_exists = function(x, y)
-    return s.board[x] ~= nil and s.board[x][y] ~= nil
+  s.init_board = function()
+    s.board = {}
+
+    for x = 1, s.grid_x do
+      add(s.board, {})
+    end
   end
 
-  s.block_key = function()
-    game.increment_block_counter()
-    return 'block_' .. game.block_counter
+  s.init_next = function()
+    local pos_y_start = 3
+
+    s.next = {}
+
+    for i = 1, 3 do
+      local key = 'next_' .. i
+      local tiles = {
+        { i = s.rnd_block() }
+      }
+
+      local pos_x = 111
+      local pos_y = pos_y_start + (i * 8)
+
+      object_define(key, { tiles = tiles, x = pos_x, y = pos_y })
+      add(s.next, key)
+    end
   end
 
-  s.build_match_table = function(x_start, y_start)
-    local match_table = {}
+  -- check methods
 
-    for y = y_start, y_start + 4 do
-      for x = x_start - 4, x_start + 4 do
-        local block_props = {
-          x = x,
-          y = y,
-        }
-
-        if s.block_exists(x, y) then
-          local block = s.board[x][y]
-          local block_object = o(block.key)
-
-          block_props['spr'] = block_object.tiles[1].i
-          block_props['key'] = block.key
-        end
-
-        add(match_table, block_props)
-      end
+  s.check_faller = function()
+    if not s.ticked then
+      return
     end
 
-    return match_table
-  end
+    s.spawn_faller()
 
-  s.can_scroll_to = function(index)
-    if s.faller and s.faller.pos_y > s.stack_y(index) then
-      sfx(7)
-      return false
+    if s.faller_can_fall() then
+      s.update_faller()
+      return
     end
 
-    return true
+    s.transfer_faller_to_board()
+  end
+
+  s.check_game_over = function()
+    if #s.board[5] > s.stack_fail_height then
+      game.go_to('game_over')
+    end
   end
 
   s.check_input = function()
-    check_matches = false
+    if s.input_disabled then
+      return
+    end
+
+    local input_bitfield = btnp()
+
+    if input_bitfield == 1 or
+       input_bitfield == 2 or
+       input_bitfield == 4 or
+       input_bitfield == 8 then
+
+      s.perform_check_matches = true
+    end
 
     if btnp(0) and s.can_scroll_to(6) then
-      check_matches = true
       sfx(0)
       s.board = table_rotate(s.board, 1)
     end
 
     if btnp(1) and s.can_scroll_to(4) then
-      check_matches = true
       sfx(1)
       s.board = table_rotate(s.board, -1)
     end
 
     if btnp(2) then
-      check_matches = true
       sfx(3)
       s.rotate_columns(-1)
     end
 
     if btnp(3) then
-      check_matches = true
       sfx(2)
       s.rotate_columns(1)
     end
 
-    s.should_check_matches = check_matches
-
-    if btnp(4) and s.can_force_fall then
-      s.can_force_fall = false
+    if btnp(4) and s.can_hard_fall then
       sfx(4)
-      s.hard_fall = true
-      s.tick.interval = 0
+      s.hard_fall    = true
+      s.tick_timeout = s.tick_timeout_fast
     end
   end
 
   s.check_matches = function()
-    s.matches = {}
-    --  -----------------
-    -- |3| | | |2| | | |4|
-    -- | |3| | |2| | |4| |
-    -- | | |3| |2| |4| | |
-    -- | | | |3|2|4| | | |
-    -- | | | | |*|1|1|1|1|
-    --  -----------------
-    local match_combos = {
-      -- numbers descend heading towards the asterisk in the diagram
-      { 9,  8,  7,  6,  5 }, -- horizontal  (1)
-      { 41, 32, 23, 14, 5 }, -- vertical    (2)
-      { 36, 29, 21, 13, 5 }, -- tl diagonal (3)
-      { 45, 35, 25, 15, 5 }  -- tr diagonal (4)
-    }
+    if not s.perform_check_matches then
+      return
+    end
 
     for x = 1, s.grid_x do
       for y = 1, s.grid_y do
         if s.block_exists(x, y) then
-          s.match_table = s.build_match_table(x, y)
-          foreach(match_combos, function(combo)
+          s.build_match_table(x, y)
+
+          foreach(s.match_combos, function(combo)
+            -- printh(game.frame() .. ' - matching')
             s.perform_match_algorithm(copy(combo))
           end)
         end
@@ -784,19 +786,14 @@ state_define('playing', function()
     end
 
     if (#s.matches > 0) then
-      s.remove_matches()
+      s.create_flashes()
+      s.input_disabled = true
+      game.wait('block_removal', s.block_removal_timeout)
+      sfx(9)
     end
   end
 
-  s.destroy_objects = function()
-    if (#s.flashes == 0) return
-
-    foreach(s.flashes, function(flash)
-      game.object_destroy(flash.key)
-    end)
-
-    s.flashes = {}
-  end
+  -- draw methods
 
   s.draw_board = function()
     -- corners
@@ -851,6 +848,80 @@ state_define('playing', function()
     print(game.score, 86, 58, 7)
   end
 
+  -- update methods
+
+  s.update_blocks = function()
+    for x = 1, s.grid_x do
+      local blocks_count = #s.board[x]
+
+      for y = 1, blocks_count do
+        local block = s.board[x][y]
+        local pos_x, pos_y = s.get_block_pos(x, y)
+        o(block.key).pos({ x = pos_x, y = pos_y })
+      end
+    end
+  end
+
+  s.update_faller = function()
+    s.faller.pos_y += s.faller.y_increment
+
+    for i = 1, 3 do
+      local block_object = o('faller_' .. i)
+      block_object.pos({
+        x = s.faller.pos_x,
+        y = s.faller.pos_y + (i * 8)
+      })
+    end
+  end
+
+  s.update_reset = function()
+    s.input_disabled        = false
+    s.perform_check_matches = false
+  end
+
+  -- state methods
+
+  s.block_exists = function(x, y)
+    return s.board[x] ~= nil and s.board[x][y] ~= nil
+  end
+
+  s.block_key = function()
+    game.increment_block_counter()
+    return 'block_' .. game.block_counter
+  end
+
+  s.build_match_table = function(x_start, y_start)
+    s.match_table = {}
+
+    for y = y_start, y_start + 4 do
+      for x = x_start - 4, x_start + 4 do
+        local block_props = {
+          x = x,
+          y = y,
+        }
+
+        if s.block_exists(x, y) then
+          local block = s.board[x][y]
+          local block_object = o(block.key)
+
+          block_props['spr'] = block_object.tiles[1].i
+          block_props['key'] = block.key
+        end
+
+        add(s.match_table, block_props)
+      end
+    end
+  end
+
+  s.can_scroll_to = function(index)
+    if s.faller and s.faller.pos_y > s.stack_y(index) then
+      sfx(7)
+      return false
+    end
+
+    return true
+  end
+
   s.faller_can_fall = function()
     local next_pos_y = s.faller.pos_y + s.faller.y_increment
 
@@ -880,10 +951,6 @@ state_define('playing', function()
     rect(x1, y1, x2, y2, color)
   end
 
-  s.game_over = function()
-    return #s.board[5] > s.stack_fail_length
-  end
-
   s.get_block_pos = function(x, y)
     pos_x = s.board_x + (x * s.block_size) - s.block_size
     pos_y = s.board_y - (y * s.block_size)
@@ -894,19 +961,17 @@ state_define('playing', function()
     foreach(combo, function(i)
       local subject = s.match_table[i]
       local matched_props = {
-        key = subject.key,
+        key     = subject.key,
         matched = length,
-        x = subject.x,
-        y = subject.y,
+        x       = subject.x,
+        y       = subject.y
       }
 
-      del(s.matches, matched_props)
       add(s.matches, matched_props)
     end)
   end
 
   s.perform_match_algorithm = function(combo)
-    local c = combo
     local start_index = combo[1]
     local subject = s.match_table[start_index]
     local match_value = subject and subject.spr
@@ -933,21 +998,38 @@ state_define('playing', function()
     end
   end
 
+  s.create_flashes = function()
+    foreach(s.matches, function(match)
+      add(s.flashes, copy(match))
+    end)
+  end
+
   s.remove_matches = function()
-    sfx(9)
-    s.controls_active = false
-    game.wait('block_removal', s.block_removal_timeout)
+    if #s.matches == 0 then
+      return
+    end
 
     foreach(s.matches, function(match)
       local col = s.board[match.x]
       local block = col[match.y]
-      game.update_score(match.matched)
-      add(s.flashes, copy(match))
       del(col, block)
+      game.update_score(match.matched)
+      game.object_destroy(match.key)
     end)
 
-    s.should_check_matches = true
-    s.controls_active = true
+    s.flashes = {}
+    s.matches = {}
+
+    s.update_blocks()
+    s.check_matches()
+  end
+
+  s.reset_ticked = function()
+    s.ticked = false
+  end
+
+  s.reset_tick_timeout = function()
+    s.tick_timeout = s.tick_timeout_default
   end
 
   s.rnd_block = function()
@@ -961,19 +1043,13 @@ state_define('playing', function()
     end
   end
 
-  s.should_tick = function()
-    if s.tick.counter >= s.tick.interval then
-      s.tick.counter = 0
-      return true
+  s.spawn_faller = function()
+    if s.faller then
+      return
     end
 
-    s.tick.counter += 1
-    return false
-  end
-
-  s.spawn_faller = function()
-    s.can_force_fall = true
-    s.faller = clone(s.faller_defaults)
+    s.can_hard_fall = true
+    s.faller        = clone(s.faller_defaults)
 
     for i = 1, 3 do
       local block_object = o(s.next[i])
@@ -983,26 +1059,7 @@ state_define('playing', function()
       end
     end
 
-    s.spawn_next()
-  end
-
-  s.spawn_next = function()
-    local pos_y_start = 3
-
-    s.next = {}
-
-    for i = 1, 3 do
-      local key = 'next_' .. i
-      local tiles = {
-        { i = s.rnd_block() }
-      }
-
-      local pos_x = 111
-      local pos_y = pos_y_start + (i * 8)
-
-      object_define(key, { tiles = tiles, x = pos_x, y = pos_y })
-      add(s.next, key)
-    end
+    s.init_next()
   end
 
   s.stack_y = function(i)
@@ -1011,59 +1068,40 @@ state_define('playing', function()
     return vert_offset - (s.faller.height * s.block_size)
   end
 
+  s.tick = function()
+    s.tick_counter += 1
+
+    if s.tick_counter > s.tick_timeout then
+      s.tick_counter = 0
+      s.ticked       = true
+    end
+  end
+
   s.transfer_faller_to_board = function()
+    local sound_effect = 8
+
     for i = 3, 1, -1 do
-      local block_object = o('faller_' .. i)
-      local key = s.block_key()
+      local faller_key   = 'faller_' .. i
+      local block_object = o(faller_key)
+      local key          = s.block_key()
+      local pos_x, pos_y = s.get_block_pos(5, #s.board[5])
 
-      object_define(key, { tiles = block_object.tiles })
-      add(s.board[5], {
-        key = key,
-        match_checked = false,
-        remove = false
-      })
+      add(s.board[5], { key = key })
+      object_define(key, { tiles = block_object.tiles, x = pos_x, y = pos_y })
+      game.object_destroy(faller_key)
     end
 
-    s.faller = nil
-    s.tick.interval = s.tick.interval_default
-    s.should_check_matches = true
-  end
-
-  s.update_blocks = function()
-    for x = 1, s.grid_x do
-      local blocks_count = #s.board[x]
-
-      for y = 1, blocks_count do
-        local block = s.board[x][y]
-        local pos_x, pos_y = s.get_block_pos(x, y)
-        o(block.key).pos({ x = pos_x, y = pos_y })
-      end
+    if s.hard_fall then
+      sound_effect = 6
+      game.shake   = 2
+      s.hard_fall  = false
     end
-  end
 
-  s.update_faller = function()
-    if s.faller_can_fall() then
-      s.faller.pos_y += s.faller.y_increment
+    sfx(sound_effect)
 
-      for i = 1, 3 do
-        local block_object = o('faller_' .. i)
-        block_object.pos({
-          x = s.faller.pos_x,
-          y = s.faller.pos_y + (i * 8)
-        })
-      end
-    else
-      local sound_effect = 8
-      if s.hard_fall then
-        sound_effect = 6
-        game.shake = 2
-        s.hard_fall = false
-      end
-
-      sfx(sound_effect)
-
-      s.transfer_faller_to_board()
-    end
+    s.faller                = nil
+    s.perform_check_matches = true
+    s.reset_tick_timeout()
   end
 
   return s
@@ -1162,7 +1200,7 @@ __sfx__
 000100002055000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000100002355000000000000000000000000000000007500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000100001502016020170202d0002b0002e0001c4000d3000e0000d0000c0000b0000b0000a0000a0003300033000320002f0002d000000000000000000000000000000000000000000000000000000000000000
-001000001a050160501405011050110500f050000000f0500e0500e05000000050500305001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+001000001a050160501405011050110500f050000000f0500e0500e05000000050000300001000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0001000019050170501605014050100500e0500d0500b0500a0500a05000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 000100002212021120201201f1201e1201d1201b1201a120191201812018120000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 0001000010020100200f0200e0000d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
