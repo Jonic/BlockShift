@@ -188,20 +188,20 @@ local game_init = function()
     if (g.score > g.high_score) g.update_high_score()
   end
 
-  g.wait = function(timer_key, timeout)
-    g.wait_timers[timer_key] = timeout
+  g.wait = function(timer_id, timeout)
+    g.wait_timers[timer_id] = timeout
   end
 
-  g.waiting = function(timer_key)
-    local timer = g.wait_timers[timer_key]
+  g.waiting = function(timer_id)
+    local timer = g.wait_timers[timer_id]
 
     if timer then
       if timer == 0 then
-        del(g.wait_timers, g.wait_timers[timer_key])
+        del(g.wait_timers, g.wait_timers[timer_id])
       end
 
       if timer > 0 then
-        g.wait_timers[timer_key] -= 1
+        g.wait_timers[timer_id] -= 1
         return true
       end
     end
@@ -367,7 +367,7 @@ function object_define(id, props)
   end
 
   o.data_set = function(key, value)
-    return o.data_attrs[key] = value
+    o.data_attrs[key] = value
   end
 
   o.draw_rect = function(r)
@@ -666,14 +666,17 @@ state_define('playing', function()
     end
 
     s.remove_matches()
-    s.tick()
-    s.update_reset()
-    s.check_input()
-    s.check_faller()
+
+    if not s.has_matches() then
+      s.tick()
+      s.check_input()
+      s.check_faller()
+      s.check_game_over()
+    end
+
     s.update_blocks()
     s.check_matches()
-    s.check_game_over()
-    s.reset_ticked()
+    s.update_reset()
   end
 
   s.draw = function()
@@ -706,7 +709,7 @@ state_define('playing', function()
     s.next = {}
 
     for i = 1, 3 do
-      local key = 'next_' .. i
+      local id = 'next_' .. i
       local tiles = {
         { i = s.rnd_block() }
       }
@@ -714,8 +717,8 @@ state_define('playing', function()
       local pos_x = 111
       local pos_y = pos_y_start + (i * 8)
 
-      object_define(key, { tiles = tiles, x = pos_x, y = pos_y })
-      add(s.next, key)
+      object_define(id, { tiles = tiles, x = pos_x, y = pos_y })
+      add(s.next, id)
     end
   end
 
@@ -743,10 +746,6 @@ state_define('playing', function()
   end
 
   s.check_input = function()
-    if s.input_disabled then
-      return
-    end
-
     local input_bitfield = btnp()
 
     if input_bitfield == 1 or
@@ -789,6 +788,9 @@ state_define('playing', function()
       return
     end
 
+    s.flashes = {}
+    s.matches = {}
+
     for x = 1, s.grid_x do
       for y = 1, s.grid_y do
         if s.block_exists(x, y) then
@@ -802,11 +804,8 @@ state_define('playing', function()
       end
     end
 
-    if (#s.matches > 0) then
+    if s.has_matches() then
       s.create_flashes()
-      s.input_disabled = true
-      game.wait('block_removal', s.block_removal_timeout)
-      sfx(9)
     end
   end
 
@@ -874,7 +873,7 @@ state_define('playing', function()
       for y = 1, blocks_count do
         local block = s.board[x][y]
         local pos_x, pos_y = s.get_block_pos(x, y)
-        o(block.key).pos({ x = pos_x, y = pos_y })
+        o(block.id).pos({ x = pos_x, y = pos_y })
       end
     end
   end
@@ -892,8 +891,8 @@ state_define('playing', function()
   end
 
   s.update_reset = function()
-    s.input_disabled        = false
     s.perform_check_matches = false
+    s.ticked                = false
   end
 
   -- state methods
@@ -902,7 +901,7 @@ state_define('playing', function()
     return s.board[x] ~= nil and s.board[x][y] ~= nil
   end
 
-  s.block_key = function()
+  s.block_id = function()
     game.increment_block_counter()
     return 'block_' .. game.block_counter
   end
@@ -919,10 +918,10 @@ state_define('playing', function()
 
         if s.block_exists(x, y) then
           local block = s.board[x][y]
-          local block_object = o(block.key)
+          local block_object = o(block.id)
 
           block_props['spr'] = block_object.tiles[1].i
-          block_props['key'] = block.key
+          block_props['id'] = block.id
         end
 
         add(s.match_table, block_props)
@@ -978,8 +977,8 @@ state_define('playing', function()
     foreach(combo, function(i)
       local subject = s.match_table[i]
       local matched_props = {
-        key     = subject.key,
-        matched = length,
+        id      = subject.id,
+        score   = length,
         x       = subject.x,
         y       = subject.y
       }
@@ -1010,39 +1009,42 @@ state_define('playing', function()
     end
 
     del(combo, combo[1])
+
     if #combo > 2 then
       return s.perform_match_algorithm(combo)
     end
   end
 
   s.create_flashes = function()
+    game.wait('block_removal', s.block_removal_timeout)
+    sfx(9)
+
     foreach(s.matches, function(match)
       add(s.flashes, copy(match))
     end)
   end
 
+  s.has_matches = function()
+    return #s.matches > 0
+  end
+
   s.remove_matches = function()
-    if #s.matches == 0 then
+    if not s.has_matches() then
       return
     end
 
     foreach(s.matches, function(match)
-      local col = s.board[match.x]
+      local col   = s.board[match.x]
       local block = col[match.y]
       del(col, block)
-      game.update_score(match.matched)
-      game.object_destroy(match.key)
+
+      game.update_score(match.score)
+      printh('updating score by ' .. match.score)
+      game.object_destroy(match.id)
+      printh('removing ' .. match.id)
     end)
 
-    s.flashes = {}
-    s.matches = {}
-
-    s.update_blocks()
-    s.check_matches()
-  end
-
-  s.reset_ticked = function()
-    s.ticked = false
+    s.perform_check_matches = true
   end
 
   s.reset_tick_timeout = function()
@@ -1070,9 +1072,9 @@ state_define('playing', function()
 
     for i = 1, 3 do
       local block_object = o(s.next[i])
-      local key = 'faller_' .. i
+      local id = 'faller_' .. i
       if block_object then
-        object_define(key, { tiles = block_object.tiles })
+        object_define(id, { tiles = block_object.tiles })
       end
     end
 
@@ -1098,14 +1100,14 @@ state_define('playing', function()
     local sound_effect = 8
 
     for i = 3, 1, -1 do
-      local faller_key   = 'faller_' .. i
-      local block_object = o(faller_key)
-      local key          = s.block_key()
+      local faller_id   = 'faller_' .. i
+      local block_object = o(faller_id)
+      local id          = s.block_id()
       local pos_x, pos_y = s.get_block_pos(5, #s.board[5])
 
-      add(s.board[5], { key = key })
-      object_define(key, { tiles = block_object.tiles, x = pos_x, y = pos_y })
-      game.object_destroy(faller_key)
+      add(s.board[5], { id = id })
+      object_define(id, { tiles = block_object.tiles, x = pos_x, y = pos_y })
+      game.object_destroy(faller_id)
     end
 
     if s.hard_fall then
